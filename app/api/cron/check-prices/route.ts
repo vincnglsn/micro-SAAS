@@ -25,11 +25,14 @@ async function fetchProduct(asin: string, marketplace: string): Promise<Snapshot
   });
 
   const res = await fetch(`${RAINFOREST_URL}?${params.toString()}`, { cache: "no-store" });
-  if (!res.ok) return null;
-
-  const json = await res.json();
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.product) {
+    console.error(
+      `[check-prices] Rainforest KO pour ${asin}: HTTP ${res.status} - ${json?.request_info?.message ?? json?.message ?? "pas de produit dans la réponse"}`
+    );
+    return null;
+  }
   const p = json.product;
-  if (!p) return null;
 
   const offer = p.buybox_winner;
   return {
@@ -58,8 +61,10 @@ export async function GET(request: Request) {
     .eq("is_active", true);
 
   if (error) {
+    console.error(`[check-prices] Lecture tracked_asins KO: ${error.message}`);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  console.log(`[check-prices] ${asins?.length ?? 0} ASIN actif(s) trouvé(s)`);
 
   let ok = 0;
   let failed = 0;
@@ -90,10 +95,12 @@ export async function GET(request: Request) {
           .eq("id", row.id);
       }
       ok++;
-    } catch {
+    } catch (e) {
+      console.error(`[check-prices] Erreur pour ${row.asin}:`, e);
       failed++;
     }
   }
 
+  console.log(`[check-prices] terminé: ok=${ok} failed=${failed}`);
   return NextResponse.json({ checked: asins?.length ?? 0, ok, failed });
 }
